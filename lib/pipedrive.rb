@@ -98,3 +98,7 @@ require 'pipedrive/user'
 
 # Pipelines
 require 'pipedrive/pipeline'
+
+# Webhooks
+require 'pipedrive/webhook'
+
