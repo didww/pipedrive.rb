@@ -2,14 +2,16 @@
 
 module Pipedrive
   class Base
-    def initialize(api_token = ::Pipedrive.api_token)
-      raise 'api_token should be set' unless api_token.present?
+    attr_reader :faraday_options
 
-      @api_token = api_token
-    end
-
-    def connection
-      self.class.connection.dup
+    def initialize(*args)
+      options = args.extract_options!
+      @client_id = options[:client_id]
+      @client_secret = options[:client_secret]
+      @access_token = options[:access_token]
+      @refresh_token = options[:refresh_token]
+      @domain_url = options[:domain_url]
+      @authentication_callback = options[:authentication_callback]
     end
 
     def make_api_call(*args)
@@ -19,6 +21,8 @@ module Pipedrive
 
       url = build_url(args, params.delete(:fields_to_select))
       params = params.to_json unless method.to_sym == :get
+      params = nil if method.to_sym == :delete
+      can_refresh = true
       begin
         res = connection.__send__(method.to_sym, url, params)
       rescue Errno::ETIMEDOUT
@@ -26,15 +30,39 @@ module Pipedrive
       rescue Faraday::ParsingError
         sleep 5
         retry
+      rescue Faraday::UnauthorizedError
+        refresh_access_token if can_refresh
+        can_refresh = false
+        retry
       end
+
       process_response(res)
+    end
+
+    def refresh_access_token
+      res = connection.post 'https://oauth.pipedrive.com/oauth/token' do |req|
+        req.body = URI.encode_www_form(
+          grant_type: 'refresh_token',
+          refresh_token: @refresh_token
+        )
+        req.headers = {
+          'Authorization': "Basic #{Base64.strict_encode64("#{@client_id}:#{@client_secret}").strip}",
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      end
+
+      if res.success?
+        @access_token = res.body.access_token
+        @refresh_token = res.body.refresh_token
+        @connection = nil # clear connection in cache to use new tokens
+        @authentication_callback.call(res.body) if @authentication_callback.present?
+      end
     end
 
     def build_url(args, fields_to_select = nil)
       url = +"/v1/#{entity_name}"
       url << "/#{args[1]}" if args[1]
       url << ":(#{fields_to_select.join(',')})" if fields_to_select.is_a?(::Array) && fields_to_select.size.positive?
-      url << "?api_token=#{@api_token}"
       url
     end
 
@@ -68,29 +96,29 @@ module Pipedrive
       class_names[class_name] || class_name
     end
 
-    class << self
-      def faraday_options
-        {
-          url:     'https://api.pipedrive.com',
-          headers: {
-            accept:       'application/json',
-            content_type: 'application/json',
-            user_agent:   ::Pipedrive.user_agent
-          }
+    def faraday_options
+      {
+        url: @domain_url,
+        headers: {
+          authorization: "Bearer #{@access_token}",
+          accept:       'application/json',
+          content_type: 'application/json',
+          user_agent:   ::Pipedrive.user_agent
         }
-      end
+      }
+    end
 
-      # This method smells of :reek:TooManyStatements
-      # :nodoc
-      def connection
-        @connection ||= Faraday.new(faraday_options) do |conn|
-          conn.request :url_encoded
-          conn.response :mashify
-          conn.response :json, content_type: /\bjson$/
-          conn.use FaradayMiddleware::ParseJson
-          conn.response :logger, ::Pipedrive.logger if ::Pipedrive.debug
-          conn.adapter Faraday.default_adapter
-        end
+    # This method smells of :reek:TooManyStatements
+    # :nodoc
+    def connection
+      @connection ||= Faraday.new(faraday_options) do |conn|
+        conn.request :url_encoded
+        conn.response :mashify
+        conn.response :json, content_type: /\bjson$/
+        conn.use FaradayMiddleware::ParseJson
+        conn.response :logger, ::Pipedrive.logger if ::Pipedrive.debug
+        conn.response :raise_error
+        conn.adapter Faraday.default_adapter
       end
     end
   end
