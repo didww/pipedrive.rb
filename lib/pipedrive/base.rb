@@ -2,7 +2,7 @@
 
 module Pipedrive
   class Base
-    attr_reader :faraday_options
+    attr_reader :faraday_options, :client_options
 
     def initialize(*args)
       options = args.extract_options!
@@ -12,6 +12,7 @@ module Pipedrive
       @refresh_token = options[:refresh_token]
       @domain_url = options[:domain_url]
       @authentication_callback = options[:authentication_callback]
+      @client_options = options[:client_options] || {}
     end
 
     def make_api_call(*args)
@@ -105,8 +106,9 @@ module Pipedrive
           content_type: 'application/json',
           user_agent:   ::Pipedrive.user_agent
         }
-      }
+      }.merge(client_options)
     end
+
 
     # This method smells of :reek:TooManyStatements
     # :nodoc
