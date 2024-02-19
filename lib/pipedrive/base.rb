@@ -93,7 +93,7 @@ module Pipedrive
 
     def entity_name
       class_name = self.class.name.split('::')[-1].downcase.pluralize
-      class_names = { 'people' => 'persons' }
+      class_names = { 'people' => 'persons', 'calllogs' => 'callLogs' }
       class_names[class_name] || class_name
     end
 
