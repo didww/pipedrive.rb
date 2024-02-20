@@ -102,3 +102,6 @@ require 'pipedrive/pipeline'
 # Webhooks
 require 'pipedrive/webhook'
 
+# Call Logs
+require 'pipedrive/call_log'
+
