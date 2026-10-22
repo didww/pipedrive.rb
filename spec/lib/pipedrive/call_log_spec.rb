@@ -8,6 +8,6 @@ RSpec.describe ::Pipedrive::CallLog do
   describe '#entity_name' do
     subject { super().entity_name }
 
-    it { is_expected.to eq('call_logs') }
+    it { is_expected.to eq('callLogs') }
   end
 end

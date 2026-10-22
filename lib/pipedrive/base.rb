@@ -2,7 +2,9 @@
 
 module Pipedrive
   class Base
-    attr_reader :faraday_options, :client_options
+    API_PATH_PREFIXES = { v1: '/v1', v2: '/api/v2' }.freeze
+
+    attr_reader :client_options
 
     def initialize(*args)
       options = args.extract_options!
@@ -60,11 +62,26 @@ module Pipedrive
       end
     end
 
+    # Pipedrive serves each resource from one API version, under a prefix of its own.
+    # https://pipedrive.readme.io/docs/pipedrive-api-v2-migration-guide
+    def self.api_version
+      :v1
+    end
+
+    def api_path_prefix
+      API_PATH_PREFIXES.fetch(self.class.api_version)
+    end
+
     def build_url(args, fields_to_select = nil)
-      url = +"/v1/#{entity_name}"
+      url = +"#{api_path_prefix}/#{entity_name}"
       url << "/#{args[1]}" if args[1]
-      url << ":(#{fields_to_select.join(',')})" if fields_to_select.is_a?(::Array) && fields_to_select.size.positive?
+      url << ":(#{fields_to_select.join(',')})" if field_selector?(fields_to_select)
       url
+    end
+
+    # v2 removed field selectors outright; include_fields only adds values left out of the default response.
+    def field_selector?(fields_to_select)
+      self.class.api_version == :v1 && fields_to_select.is_a?(::Array) && fields_to_select.size.positive?
     end
 
     def process_response(res)
@@ -79,16 +96,12 @@ module Pipedrive
       failed_response(res)
     end
 
+    # The raise_error middleware raises on every 4xx and 5xx before this runs, so only a 3xx reaches
+    # here, and such a response need not carry a body the json middleware parsed.
     def failed_response(res)
-      failed_res = res.body.merge(success: false, not_authorized: false,
-                                  failed: false)
-      case res.status
-      when 401
-        failed_res[:not_authorized] = true
-      when 420
-        failed_res[:failed] = true
-      end
-      failed_res
+      return ::Hashie::Mash.new(success: false) unless res.body.is_a?(::Hashie::Mash)
+
+      res.body.merge(success: false)
     end
 
     def entity_name

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'logger'
+require 'active_support/core_ext/array/extract_options'
 require 'active_support/core_ext/hash'
 require 'active_support/concern'
 require 'active_support/inflector'
@@ -50,6 +51,7 @@ require 'pipedrive/operations/create'
 require 'pipedrive/operations/read'
 require 'pipedrive/operations/update'
 require 'pipedrive/operations/delete'
+require 'pipedrive/operations/cursor_pagination'
 
 # Persons
 require 'pipedrive/person_field'
@@ -105,3 +107,8 @@ require 'pipedrive/webhook'
 # Call Logs
 require 'pipedrive/call_log'
 
+# API v2 resources, for the entities whose v1 endpoints are out of support
+require 'pipedrive/v2/resource'
+require 'pipedrive/v2/person'
+require 'pipedrive/v2/activity'
+require 'pipedrive/v2/organization'

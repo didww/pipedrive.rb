@@ -11,7 +11,13 @@ module Pipedrive
         id = params.delete(:id) || args[0]
         raise 'id must be provided' unless id
 
-        make_api_call(:put, id, params)
+        make_api_call(update_http_method, id, params)
+      end
+
+      private
+
+      def update_http_method
+        :put
       end
     end
   end

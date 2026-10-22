@@ -3,7 +3,7 @@
 require 'spec_helper'
 
 RSpec.describe ::Pipedrive::Base do
-  subject { described_class.new('token') }
+  subject { described_class.new(access_token: 'token', domain_url: 'https://api.pipedrive.com') }
 
   describe '#entity_name' do
     subject { super().entity_name }
@@ -11,16 +11,31 @@ RSpec.describe ::Pipedrive::Base do
     it { is_expected.to eq described_class.name.split('::')[-1].downcase.pluralize }
   end
 
-  context '::faraday_options' do
-    subject { described_class.faraday_options }
-
-    it {
-      expect(subject).to eq({
-        url:     'https://api.pipedrive.com',
-        headers: { accept: 'application/json', content_type: "application/json", user_agent: 'Pipedrive Ruby Client v0.3.0' }
-        })
-      }
+  describe '#build_url' do
+    it 'serves the resource from v1 by default' do
+      expect(subject.build_url([:get])).to eq('/v1/bases')
     end
+
+    it 'appends the id' do
+      expect(subject.build_url([:get, 12])).to eq('/v1/bases/12')
+    end
+  end
+
+  context '#faraday_options' do
+    subject { super().faraday_options }
+
+    it 'authenticates with the access token against the company domain' do
+      expect(subject).to eq(
+        url: 'https://api.pipedrive.com',
+        headers: {
+          authorization: 'Bearer token',
+          accept: 'application/json',
+          content_type: 'application/json',
+          user_agent: "Pipedrive Ruby Client v#{::Pipedrive::VERSION}"
+        }
+      )
+    end
+  end
 
   context '::connection' do
     subject { super().connection }
@@ -31,42 +46,18 @@ RSpec.describe ::Pipedrive::Base do
   describe '#failed_response' do
     subject { super().failed_response(res) }
 
-    let(:res) { double('res', body: ::Hashie::Mash.new({}), status: status) }
+    let(:res) { double('res', body: body) }
 
-    context 'status is 401' do
-      let(:status) { 401 }
+    context 'with a body the json middleware parsed' do
+      let(:body) { ::Hashie::Mash.new(error: 'Moved') }
 
-      it {
-        expect(subject).to eq(::Hashie::Mash.new({
-                                                   failed:         false,
-                                                  not_authorized: true,
-                                                  success:        false
-                                                 }))
-      }
+      it { is_expected.to eq(::Hashie::Mash.new(error: 'Moved', success: false)) }
     end
 
-    context 'status is 420' do
-      let(:status) { 420 }
+    context 'with a body it did not parse' do
+      let(:body) { '<html>Moved</html>' }
 
-      it {
-        expect(subject).to eq(::Hashie::Mash.new({
-                                                   failed:         true,
-                                                  not_authorized: false,
-                                                  success:        false
-                                                 }))
-      }
-    end
-
-    context 'status is 400' do
-      let(:status) { 400 }
-
-      it {
-        expect(subject).to eq(::Hashie::Mash.new({
-                                                   failed:         false,
-                                                  not_authorized: false,
-                                                  success:        false
-                                                 }))
-      }
+      it { is_expected.to eq(::Hashie::Mash.new(success: false)) }
     end
   end
 
@@ -77,79 +68,78 @@ RSpec.describe ::Pipedrive::Base do
 
     context 'without id' do
       it 'calls :get' do
-        stub_request(:get, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:get).with('/v1/bases?api_token=token', {}).and_call_original
+        stub_request(:get, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:get).with('/v1/bases', {}).and_call_original
         expect(subject.make_api_call(:get))
       end
 
       it 'calls :post' do
-        stub_request(:post, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:post).with('/v1/bases?api_token=token', { test: 'bar' }.to_json).and_call_original
+        stub_request(:post, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:post).with('/v1/bases', { test: 'bar' }.to_json).and_call_original
         expect(subject.make_api_call(:post, test: 'bar'))
       end
 
       it 'calls :put' do
-        stub_request(:put, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:put).with('/v1/bases?api_token=token', { test: 'bar' }.to_json).and_call_original
+        stub_request(:put, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:put).with('/v1/bases', { test: 'bar' }.to_json).and_call_original
         expect(subject.make_api_call(:put, test: 'bar'))
       end
 
       it 'uses field_selector properly' do
-        stub_request(:get, 'https://api.pipedrive.com/v1/bases:(a,b,c)?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
+        stub_request(:get, 'https://api.pipedrive.com/v1/bases:(a,b,c)').to_return(status: 200, body: {}.to_json, headers: {})
         expect_any_instance_of(::Faraday::Connection).to receive(:get)
-          .with('/v1/bases:(a,b,c)?api_token=token', {}).and_call_original
+          .with('/v1/bases:(a,b,c)', {}).and_call_original
         expect(subject.make_api_call(:get, fields_to_select: %w[a b c]))
       end
 
       it 'does not use field_selector if it empty' do
-        stub_request(:get, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
+        stub_request(:get, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: {}.to_json, headers: {})
         expect_any_instance_of(::Faraday::Connection).to receive(:get)
-          .with('/v1/bases?api_token=token', {}).and_call_original
+          .with('/v1/bases', {}).and_call_original
         expect(subject.make_api_call(:get, fields_to_select: []))
       end
 
       it 'retries if Errno::ETIMEDOUT' do
-        stub_request(:get, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
+        stub_request(:get, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: {}.to_json, headers: {})
         connection = subject.connection
         allow(subject).to receive(:connection).and_return(connection)
         allow(connection).to receive(:get)
-          .with('/v1/bases?api_token=token', {}).and_raise(Errno::ETIMEDOUT)
+          .with('/v1/bases', {}).and_raise(Errno::ETIMEDOUT)
         expect(connection).to receive(:get)
-          .with('/v1/bases?api_token=token', {}).and_call_original
+          .with('/v1/bases', {}).and_call_original
         expect(subject.make_api_call(:get, fields_to_select: []))
       end
     end
 
     context 'with id' do
       it 'calls :get' do
-        stub_request(:get, 'https://api.pipedrive.com/v1/bases/12?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:get).with('/v1/bases/12?api_token=token', {}).and_call_original
+        stub_request(:get, 'https://api.pipedrive.com/v1/bases/12').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:get).with('/v1/bases/12', {}).and_call_original
         expect(subject.make_api_call(:get, 12))
       end
 
       it 'calls :post' do
-        stub_request(:post, 'https://api.pipedrive.com/v1/bases/13?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:post).with('/v1/bases/13?api_token=token', { test: 'bar' }.to_json).and_call_original
+        stub_request(:post, 'https://api.pipedrive.com/v1/bases/13').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:post).with('/v1/bases/13', { test: 'bar' }.to_json).and_call_original
         expect(subject.make_api_call(:post, 13, test: 'bar'))
       end
 
       it 'calls :put' do
-        stub_request(:put, 'https://api.pipedrive.com/v1/bases/14?api_token=token').to_return(status: 200, body: {}.to_json, headers: {})
-        expect_any_instance_of(::Faraday::Connection).to receive(:put).with('/v1/bases/14?api_token=token', { test: 'bar' }.to_json).and_call_original
+        stub_request(:put, 'https://api.pipedrive.com/v1/bases/14').to_return(status: 200, body: {}.to_json, headers: {})
+        expect_any_instance_of(::Faraday::Connection).to receive(:put).with('/v1/bases/14', { test: 'bar' }.to_json).and_call_original
         expect(subject.make_api_call(:put, 14, test: 'bar'))
       end
     end
 
     it 'calls Hashie::Mash if return empty string' do
-      stub_request(:get, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 200, body: '', headers: {})
+      stub_request(:get, 'https://api.pipedrive.com/v1/bases').to_return(status: 200, body: '', headers: {})
       expect(::Hashie::Mash).to receive(:new).with(success: true).and_call_original
       expect(subject.make_api_call(:get))
     end
 
-    it 'calls #failed_response if failed status' do
-      stub_request(:get, 'https://api.pipedrive.com/v1/bases?api_token=token').to_return(status: 400, body: '', headers: {})
-      expect(subject).to receive(:failed_response)
-      expect(subject.make_api_call(:get))
+    it 'raises on a failed status, since the raise_error middleware precedes #failed_response' do
+      stub_request(:get, 'https://api.pipedrive.com/v1/bases').to_return(status: 400, body: '', headers: {})
+      expect { subject.make_api_call(:get) }.to raise_error(::Faraday::BadRequestError)
     end
   end
 end
