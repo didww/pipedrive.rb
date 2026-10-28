@@ -130,7 +130,6 @@ module Pipedrive
         conn.request :url_encoded
         conn.response :mashify
         conn.response :json, content_type: /\bjson$/
-        conn.use FaradayMiddleware::ParseJson
         conn.response :logger, ::Pipedrive.logger if ::Pipedrive.debug
         conn.response :raise_error
         conn.adapter Faraday.default_adapter
